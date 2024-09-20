@@ -1,0 +1,6 @@
+# robots.txt
+User-Agent: *
+Disallow: /practice/
+
+User-agent: GPTBot
+Disallow: /

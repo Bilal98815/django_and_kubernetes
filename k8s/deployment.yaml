@@ -1,0 +1,218 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  generation: 2
+  labels:
+    app: myapp
+  name: myapp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: myapp
+  template:
+    metadata:
+      labels:
+        app: myapp
+    spec:
+      containers:
+      - image:  ghcr.io/bilal98815/848323287:k8s-106a062-20240918-093213
+        name: myapp
+        imagePullPolicy: Always
+        command:
+        - /bin/sh
+        - ./scripts/entrypoint.sh
+        resources:
+          limits:
+            memory: "400Mi"
+            cpu: "500m"
+        ports:
+        - containerPort: 8000
+        volumeMounts:
+        - name: myapp-storage
+          mountPath: /app/media
+        envFrom:
+        - secretRef:
+            name: db-secrets
+        - configMapRef:
+            name: myapp-configmaps
+      volumes:
+      - name: myapp-storage
+        persistentVolumeClaim:
+          claimName: myapp-pvc
+      imagePullSecrets:
+      - name: github-registry-secret
+    
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-deployment
+  labels:
+    app: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:14.2-alpine
+        env:
+          - name: POSTGRES_USER
+            value: "temp_user"
+          - name: POSTGRES_PASSWORD
+            value: "12345"
+          - name: POSTGRES_DB
+            value: "taining_db"
+        ports:
+          - containerPort: 5432
+        volumeMounts:
+          - name: postgres-data
+            mountPath: /var/lib/postgresql/data
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+        - name: postgres-data
+          emptyDir: {}
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  generation: 2
+  labels:
+    app: celery-beat
+  name: celery-beat
+spec:
+  selector:
+    matchLabels:
+      app: celery-beat
+  template:
+    metadata:
+      labels:
+        app: celery-beat
+    spec:
+      containers:
+      - name: celery-beat
+        image:  ghcr.io/bilal98815/848323287:k8s-106a062-20240918-093213
+        imagePullPolicy: Always
+        resources:
+          requests:
+            memory: "2048Mi"
+        command:
+        - /bin/sh
+        - ./scripts/celery-beat-script.sh
+        envFrom:
+        - configMapRef:
+            name: myapp-configmaps
+      imagePullSecrets:
+      - name: github-registry-secret
+    
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-worker
+spec:
+  selector:
+    matchLabels:
+      app: celery-worker
+  template:
+    metadata:
+      labels:
+        app: celery-worker
+    spec:
+      containers:
+      - name: celery-worker
+        image:  ghcr.io/bilal98815/848323287:k8s-106a062-20240918-093213
+        imagePullPolicy: Always
+        resources:
+          requests:
+            memory: "2048Mi"
+        command:
+        - /bin/sh
+        - ./scripts/celery-worker-script.sh
+        envFrom:
+        - configMapRef:
+            name: myapp-configmaps
+      imagePullSecrets:
+      - name: github-registry-secret
+    
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+spec:
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:6
+        ports:
+        - containerPort: 6379
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        envFrom:
+        - configMapRef:
+            name: myapp-configmaps
+          
+# ---
+
+# apiVersion: apps/v1
+# kind: Deployment
+# metadata:
+#   name: query-database
+# spec:
+#   selector:
+#     matchLabels:
+#       app: query-database
+#   template:
+#     metadata:
+#       labels:
+#         app: query-database
+#     spec:
+#       containers:
+#       - name: query-database
+#         image:  ghcr.io/bilal98815/848323287:k8s-c5c8685-20240918-085558
+#         imagePullPolicy: Always
+#         resources:
+#           requests:
+#             memory: "2048Mi"
+#         command:
+#         - /bin/sh
+#         - ./scripts/query-database-script.sh
+#         envFrom:
+#         - secretRef:
+#             name: db-secrets
+#         - configMapRef:
+#             name: myapp-configmaps
+#       imagePullSecrets:
+#       - name: github-registry-secret
+

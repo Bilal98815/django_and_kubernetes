@@ -1,0 +1,1 @@
+poetry run celery -A training beat --loglevel=info

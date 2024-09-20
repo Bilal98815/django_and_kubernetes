@@ -1,0 +1,39 @@
+version: '3.9'
+
+services:
+  postgres-service:
+    image: postgres:14.2-alpine
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_HOST_AUTH_METHOD="trust"
+      - POSTGRES_DB=taining_db
+      - POSTGRES_USER=temp_user
+      - POSTGRES_PASSWORD=12345
+
+  redis-service:
+    image: redis:6-alpine
+    ports:
+      - "6379:6379"
+
+  web:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - GIT_COMMIT_SHA="${GIT_COMMIT_SHA}"
+    image: web
+    command: poetry run python manage.py runserver 0.0.0.0:8000
+    env_file:
+      - .env
+    volumes:
+      - ./:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres-service
+      - redis-service
+volumes:
+  db_data: {}

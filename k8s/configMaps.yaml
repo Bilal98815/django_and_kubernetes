@@ -1,0 +1,16 @@
+# Config map
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: myapp-configmaps
+data:
+  DEBUG: "1"
+  APP_ENV: "development"
+  ALLOWED_HOSTS: "0.0.0.0:8000, http://10.102.201.38:8000/"
+  STATIC_URL: "static/"
+  SENTRY_DSN: "https://ac97cc775446d5b28daffad7d03bfed3@o4507844016406528.ingest.us.sentry.io/4507844021190656"
+  SENTRY_TRACE_SAMPLE_RATE: "1.0"
+  CELERY_BROKER_URL: "redis://redis-service:6379/0"
+  CELERY_RESULT_BACKEND: "redis://redis-service:6379/0"
+  ENABLE_CELERY_PERIODIC_TASKS: "true"
+  DATABASE_HOST: "postgres-service"

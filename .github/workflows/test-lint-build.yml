@@ -1,0 +1,121 @@
+name: Docker Image CI
+on: [push]
+
+jobs:
+  lint-test-build-notification:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_USER: temp_user
+          POSTGRES_PASSWORD: 12345
+          POSTGRES_DB: taining_db
+          POSTGRES_HOST_AUTH_METHOD: "trust"
+        ports:
+          - 5432:5432
+    env:
+      SENTRY_PROJECT: python-django
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      SENTRY_ORG: bilal-ev
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4.1.7
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Install dependencies
+        run: pip install --requirement ./requirements.txt
+
+      - name: Run Flake8
+        run: flake8 .
+      
+      - name: Run tests
+        run: python manage.py test
+
+      - name: Check out the code
+        uses: actions/checkout@v4.1.7
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3.6.1
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up environment variable for image tag
+        run: |
+          BRANCH_NAME=$(echo "${GITHUB_REF#refs/heads/}" | tr '/' '-')
+          COMMIT_HASH=$(echo "${GITHUB_SHA::7}")  # Get the first 7 characters of the commit hash
+          DATETIME=$(date +'%Y%m%d-%H%M%S')  # Format: YYYYMMDD-HHMMSS
+          REPO_OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "IMAGE_TAG=${BRANCH_NAME}-${COMMIT_HASH}-${DATETIME}" >> $GITHUB_ENV
+          echo "REPO_OWNER=${REPO_OWNER_LOWER}" >> $GITHUB_ENV
+          echo "GITHUB_BRANCH=${{ github.ref_name }}" >> $GITHUB_ENV
+
+      - name: Set up environment variable for commit SHA
+        run: echo "COMMIT_SHA=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_ENV
+      
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6.7.0
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ghcr.io/${{ env.REPO_OWNER }}/${{ github.repository_id }}:${{ env.IMAGE_TAG }}
+            ghcr.io/${{ env.REPO_OWNER }}/${{ github.repository_id }}:latest
+          push: true
+          build-args: |
+            GIT_COMMIT_SHA=${{ env.COMMIT_SHA }}
+
+      - name: Create Release and Notify Sentry of Deploy
+        run: |
+          case $GITHUB_BRANCH in
+    
+            master | main)
+              export SENTRY_ENVIRONMENT=production
+              ;;
+    
+            staging)
+              export SENTRY_ENVIRONMENT=staging
+              ;;
+    
+            *)
+              export SENTRY_ENVIRONMENT=dev
+              ;;
+          esac
+    
+          if [ $SENTRY_ENVIRONMENT != "dev" ]
+          then
+            curl -sL https://sentry.io/get-cli/ | bash
+            export SENTRY_RELEASE=$(sentry-cli releases propose-version)
+            sentry-cli releases new -p $SENTRY_PROJECT $SENTRY_RELEASE
+            sentry-cli releases set-commits $SENTRY_RELEASE --auto --ignore-missing
+            sentry-cli releases finalize $SENTRY_RELEASE
+            sentry-cli releases deploys $SENTRY_RELEASE new -e $SENTRY_ENVIRONMENT
+          fi
+          
+      - name: Set Slack Title
+        if: always()
+        run: |
+          if [ ${{ job.status }} == 'success' ]
+          then
+            echo "SLACK_TITLE=The pipeline succeeded! :tada:" >> $GITHUB_ENV
+          else
+            echo "SLACK_TITLE=The pipeline failed! :red_circle:" >> $GITHUB_ENV
+          fi
+
+      - name: Send Slack Notification
+        if: always()
+        uses: rtCamp/action-slack-notify@v2.3.0
+        env:
+          SLACK_COLOR: ${{ job.status }}
+          SLACK_TITLE: ${{ env.SLACK_TITLE }}
+          SLACK_MESSAGE: "Github Repository: *${{ github.repository }}*"
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
